@@ -208,10 +208,10 @@ class DisplayManager {
   ///
   /// return [Future<bool>] the value to determine whether or not the data has been transferred successfully
   Future<bool?>? transferDataToPresentation(dynamic arguments) async {
-    // Pass arguments directly - Flutter's platform channel handles serialization
-    // For very large payloads, consider using transferDataToPresentationChunked instead
+    // JSON encode if not already a String (for backward compatibility)
+    final data = arguments is String ? arguments : jsonEncode(arguments);
     return await _displayMethodChannel?.invokeMethod<bool?>(
-        _transferDataToPresentation, arguments);
+        _transferDataToPresentation, data);
   }
 
   /// Transfer data to a secondary display with chunked transfer for large payloads.
@@ -263,9 +263,11 @@ class DisplayManager {
   /// [arguments] The data to transfer
   /// </p>
   void transferDataToPresentationAsync(dynamic arguments) {
+    // JSON encode if not already a String (for backward compatibility)
+    final data = arguments is String ? arguments : jsonEncode(arguments);
     // Fire-and-forget - don't await the result
     _displayMethodChannel?.invokeMethod<bool?>(
-        _transferDataToPresentation, arguments);
+        _transferDataToPresentation, data);
   }
 
   /// Subscribe to the stream to get notifications about connected / disconnected displays
