@@ -157,9 +157,8 @@ class DisplayManager {
   /// Consider using [arguments] for cases where a particular run-time type is expected. Consider using String when that run-time type is Map or JSONObject.
   /// </p>
   /// <p>
-  /// This method serializes data in a background isolate to avoid blocking
-  /// the main thread, which prevents ANR issues on Android when transferring
-  /// large payloads.
+  /// For very large payloads (>64KB) that may cause ANR, use [transferDataToPresentationChunked]
+  /// or [transferDataToPresentationAsync] instead.
   /// </p>
   /// <p>
   /// Main Screen
@@ -209,10 +208,10 @@ class DisplayManager {
   ///
   /// return [Future<bool>] the value to determine whether or not the data has been transferred successfully
   Future<bool?>? transferDataToPresentation(dynamic arguments) async {
-    // Serialize in background isolate to avoid blocking main thread
-    final String serializedData = await compute(_serializeToJson, arguments);
+    // Pass arguments directly - Flutter's platform channel handles serialization
+    // For very large payloads, consider using transferDataToPresentationChunked instead
     return await _displayMethodChannel?.invokeMethod<bool?>(
-        _transferDataToPresentation, serializedData);
+        _transferDataToPresentation, arguments);
   }
 
   /// Transfer data to a secondary display with chunked transfer for large payloads.
@@ -261,14 +260,12 @@ class DisplayManager {
   /// Use this when you don't need confirmation of successful transfer.
   /// </p>
   /// <p>
-  /// [arguments] The data to transfer (will be JSON encoded if not already a String)
+  /// [arguments] The data to transfer
   /// </p>
   void transferDataToPresentationAsync(dynamic arguments) {
-    // Serialize in background isolate and transfer without awaiting
-    compute(_serializeToJson, arguments).then((serializedData) {
-      _displayMethodChannel?.invokeMethod<bool?>(
-          _transferDataToPresentation, serializedData);
-    });
+    // Fire-and-forget - don't await the result
+    _displayMethodChannel?.invokeMethod<bool?>(
+        _transferDataToPresentation, arguments);
   }
 
   /// Subscribe to the stream to get notifications about connected / disconnected displays
