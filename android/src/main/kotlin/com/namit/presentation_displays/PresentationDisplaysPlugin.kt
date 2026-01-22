@@ -30,9 +30,6 @@ class PresentationDisplaysPlugin : FlutterPlugin, ActivityAware, MethodChannel.M
   private var context: Context? = null
   private var presentation: PresentationDisplay? = null
 
-  // Buffer for chunked data transfer
-  private val chunkBuffer = StringBuilder()
-
   override fun onAttachedToEngine(
       @NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding
   ) {
@@ -118,56 +115,21 @@ class PresentationDisplaysPlugin : FlutterPlugin, ActivityAware, MethodChannel.M
         result.success(Gson().toJson(listJson))
       }
       "transferDataToPresentation" -> {
-        try {
-          Log.i(TAG, "transferDataToPresentation: ${call.arguments}")
-          if (flutterEngineChannel == null) {
-            Log.e(TAG, "flutterEngineChannel is null")
-            result.error("NO_CHANNEL", "Presentation not initialized", null)
-            return
-          }
-          flutterEngineChannel?.invokeMethod("DataTransfer", call.arguments)
-          result.success(true)
-        } catch (e: Exception) {
-          Log.e(TAG, "Error transferring data", e)
-          result.error("TRANSFER_ERROR", e.message, null)
-        }
-      }
-      "transferDataToPresentationChunk" -> {
-        // Handle chunked data transfer for large payloads
+        // Run on background thread to avoid blocking main UI thread
         Thread {
           try {
-            val args = call.arguments as? Map<*, *>
-            val chunk = args?.get("chunk") as? String ?: ""
-            val isLast = args?.get("isLast") as? Boolean ?: false
-
-            synchronized(chunkBuffer) {
-              chunkBuffer.append(chunk)
-
-              if (isLast) {
-                val completeData = chunkBuffer.toString()
-                chunkBuffer.clear()
-
-                // Post back to main thread for Flutter channel communication
-                Handler(Looper.getMainLooper()).post {
-                  try {
-                    flutterEngineChannel?.invokeMethod("DataTransfer", completeData)
-                    result.success(true)
-                  } catch (e: Exception) {
-                    Log.e(TAG, "Error transferring chunked data to presentation", e)
-                    result.error("TRANSFER_ERROR", e.message, null)
-                  }
-                }
-              } else {
-                Handler(Looper.getMainLooper()).post {
-                  result.success(true)
-                }
+            // Post back to main thread for Flutter channel communication
+            Handler(Looper.getMainLooper()).post {
+              try {
+                flutterEngineChannel?.invokeMethod("DataTransfer", call.arguments)
+                result.success(true)
+              } catch (e: Exception) {
+                Log.e(TAG, "Error transferring data to presentation", e)
+                result.error("TRANSFER_ERROR", e.message, null)
               }
             }
           } catch (e: Exception) {
-            Log.e(TAG, "Error in chunked transfer", e)
-            synchronized(chunkBuffer) {
-              chunkBuffer.clear()
-            }
+            Log.e(TAG, "Error in background thread", e)
             Handler(Looper.getMainLooper()).post {
               result.error("TRANSFER_ERROR", e.message, null)
             }
