@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +12,16 @@ const _listDisplay = "listDisplay";
 const _showPresentation = "showPresentation";
 const _hidePresentation = "hidePresentation";
 const _transferDataToPresentation = "transferDataToPresentation";
+const _transferDataToPresentationChunk = "transferDataToPresentationChunk";
+
+/// Helper function to serialize arguments in a background isolate.
+/// This prevents JSON encoding from blocking the main thread.
+String _serializeToJson(dynamic arguments) {
+  if (arguments is String) {
+    return arguments;
+  }
+  return jsonEncode(arguments);
+}
 
 /// Display category: secondary display.
 /// <p>
@@ -146,6 +157,10 @@ class DisplayManager {
   /// Consider using [arguments] for cases where a particular run-time type is expected. Consider using String when that run-time type is Map or JSONObject.
   /// </p>
   /// <p>
+  /// For very large payloads (>64KB) that may cause ANR, use [transferDataToPresentationChunked]
+  /// or [transferDataToPresentationAsync] instead.
+  /// </p>
+  /// <p>
   /// Main Screen
   ///
   /// ```dart
@@ -193,8 +208,66 @@ class DisplayManager {
   ///
   /// return [Future<bool>] the value to determine whether or not the data has been transferred successfully
   Future<bool?>? transferDataToPresentation(dynamic arguments) async {
+    // JSON encode if not already a String (for backward compatibility)
+    final data = arguments is String ? arguments : jsonEncode(arguments);
     return await _displayMethodChannel?.invokeMethod<bool?>(
-        _transferDataToPresentation, arguments);
+        _transferDataToPresentation, data);
+  }
+
+  /// Transfer data to a secondary display with chunked transfer for large payloads.
+  /// <p>
+  /// Use this method when transferring very large data (>64KB) to avoid
+  /// blocking the main thread and causing ANR on Android.
+  /// </p>
+  /// <p>
+  /// [arguments] The data to transfer (will be JSON encoded if not already a String)
+  /// [chunkSize] The size of each chunk in characters (default: 64000)
+  /// </p>
+  ///
+  /// return [Future<bool>] the value to determine whether or not the data has been transferred successfully
+  Future<bool?>? transferDataToPresentationChunked(
+    dynamic arguments, {
+    int chunkSize = 64000,
+  }) async {
+    // Serialize in background isolate
+    final String data = await compute(_serializeToJson, arguments);
+
+    // If data is small enough, use regular transfer
+    if (data.length <= chunkSize) {
+      return await _displayMethodChannel?.invokeMethod<bool?>(
+          _transferDataToPresentation, data);
+    }
+
+    // Chunk large data to avoid blocking
+    for (int i = 0; i < data.length; i += chunkSize) {
+      final chunk = data.substring(i, min(i + chunkSize, data.length));
+      final isLast = i + chunkSize >= data.length;
+      final result = await _displayMethodChannel?.invokeMethod<bool?>(
+        _transferDataToPresentationChunk,
+        {'chunk': chunk, 'isLast': isLast},
+      );
+      // If any chunk fails, return false
+      if (result != true && isLast) {
+        return result;
+      }
+    }
+    return true;
+  }
+
+  /// Transfer data to a secondary display without waiting for result.
+  /// <p>
+  /// Fire-and-forget method that doesn't block on the transfer result.
+  /// Use this when you don't need confirmation of successful transfer.
+  /// </p>
+  /// <p>
+  /// [arguments] The data to transfer
+  /// </p>
+  void transferDataToPresentationAsync(dynamic arguments) {
+    // JSON encode if not already a String (for backward compatibility)
+    final data = arguments is String ? arguments : jsonEncode(arguments);
+    // Fire-and-forget - don't await the result
+    _displayMethodChannel?.invokeMethod<bool?>(
+        _transferDataToPresentation, data);
   }
 
   /// Subscribe to the stream to get notifications about connected / disconnected displays
