@@ -118,26 +118,19 @@ class PresentationDisplaysPlugin : FlutterPlugin, ActivityAware, MethodChannel.M
         result.success(Gson().toJson(listJson))
       }
       "transferDataToPresentation" -> {
-        // Run on background thread to avoid blocking main UI thread
-        Thread {
-          try {
-            // Post back to main thread for Flutter channel communication
-            Handler(Looper.getMainLooper()).post {
-              try {
-                flutterEngineChannel?.invokeMethod("DataTransfer", call.arguments)
-                result.success(true)
-              } catch (e: Exception) {
-                Log.e(TAG, "Error transferring data to presentation", e)
-                result.error("TRANSFER_ERROR", e.message, null)
-              }
-            }
-          } catch (e: Exception) {
-            Log.e(TAG, "Error in background thread", e)
-            Handler(Looper.getMainLooper()).post {
-              result.error("TRANSFER_ERROR", e.message, null)
-            }
+        try {
+          Log.i(TAG, "transferDataToPresentation: ${call.arguments}")
+          if (flutterEngineChannel == null) {
+            Log.e(TAG, "flutterEngineChannel is null")
+            result.error("NO_CHANNEL", "Presentation not initialized", null)
+            return
           }
-        }.start()
+          flutterEngineChannel?.invokeMethod("DataTransfer", call.arguments)
+          result.success(true)
+        } catch (e: Exception) {
+          Log.e(TAG, "Error transferring data", e)
+          result.error("TRANSFER_ERROR", e.message, null)
+        }
       }
       "transferDataToPresentationChunk" -> {
         // Handle chunked data transfer for large payloads
